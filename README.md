@@ -43,12 +43,12 @@ python main.py test -c model_weights/config.yaml \
 If you use EarlyBird, please use the following BibTeX entry.
 
 ```
-@misc{teepe2023earlybird,
-      title={Early{B}ird: Early-Fusion for Multi-View Tracking in the Bird's Eye View}, 
-      author={Torben Teepe and Philipp Wolters and Johannes Gilg and Fabian Herzog and Gerhard Rigoll},
-      year={2023},
-      eprint={2310.13350},
-      archivePrefix={arXiv},
-      primaryClass={cs.CV}
+@InProceedings{teepe2023earlybird,
+    author    = {Teepe, Torben and Wolters, Philipp and Gilg, Johannes and Herzog, Fabian and Rigoll, Gerhard},
+    title     = {Early{B}ird: Early-Fusion for Multi-View Tracking in the Bird's Eye View},
+    booktitle = {Proceedings of the IEEE/CVF Winter Conference on Applications of Computer Vision (WACV) Workshops},
+    month     = {January},
+    year      = {2024},
+    pages     = {102-111}
 }
 ```
