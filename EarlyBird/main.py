@@ -9,7 +9,7 @@ from pytorch_metric_learning.losses import SupConLoss
 from evaluation.mAP_nuscenes import NuscenesDetectionEvaluator
 from models import MVDet
 from models.loss import FocalLoss, compute_rot_loss
-from tracking.multitracker import JDETracker
+#from tracking.multitracker import JDETracker
 from utils import vox, basic, decode
 from evaluation.mod import modMetricsCalculator
 from evaluation.mot_bev import mot_metrics_pedestrian
@@ -53,7 +53,7 @@ class WorldTrackModel(pl.LightningModule):
         self.mota_frame_gt_list, self.mota_frame_pred_list = [], []
         self.mAP_gt_dict, self.mAP_pred_dict = {}, {}
         self.mAP_results_gt, self.mAP_results_pred = {}, {}
-        self.test_tracker = JDETracker(conf_thres=self.conf_threshold, gating_threshold=gating_threshold)
+        #self.test_tracker = JDETracker(conf_thres=self.conf_threshold, gating_threshold=gating_threshold)
 
         # Model
         if model_name == 'mvdet':
@@ -243,6 +243,7 @@ class WorldTrackModel(pl.LightningModule):
             self.moda_gt_list.extend([[frame, x.item(), y.item()] for x, y, _ in grid_gt[grid_gt.sum(1) != 0]])
             self.moda_pred_list.extend([[frame, x.cpu(), y.cpu()] for x, y, _ in xyz[valid]])
 
+        '''
         # mota
         bev_det = torch.cat((ref_xyz[..., :2], torch.ones_like(ref_xyz[..., :2]), scores_e), dim=2).cpu()
         for frame, grid_gt, bev_det, bev_ids_e in zip(item['frame'], item['grid_gt'], bev_det, ids_e.cpu().numpy()):
@@ -276,6 +277,7 @@ class WorldTrackModel(pl.LightningModule):
                                     'detection_name': 'pedestrian', 'detection_score': 1,
                                     'attribute_name': ''}
                 self.mAP_results_gt[str(frame)].append(sample_result_gt)
+        '''
 
     def on_test_epoch_end(self):
         log_dir = self.trainer.log_dir if self.trainer.log_dir is not None else '../data/cache'
@@ -290,6 +292,7 @@ class WorldTrackModel(pl.LightningModule):
         self.log(f'detect/moda', moda)
         self.log(f'detect/modp', modp)
 
+        '''
         # mota
         pred_path = osp.join(log_dir, 'mota_pred.txt')
         gt_path = osp.join(log_dir, 'mota_gt.txt')
@@ -317,6 +320,7 @@ class WorldTrackModel(pl.LightningModule):
                                                verbose=False)
         nusc_metrics, nusc_metric_data_list = nusc_eval.evaluate()
         self.log(f'detect/mAP_3D', nusc_metrics.serialize()['mean_dist_aps']['pedestrian'] * 100)
+        '''
 
     def plot_data(self, target, output, batch_idx=0):
         center_e = output['instance_center']
