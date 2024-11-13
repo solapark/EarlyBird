@@ -2,13 +2,12 @@ import lightning as pl
 import os
 from torch.utils.data import DataLoader
 from typing import Optional
-from datasets.multiviewx_dataset import MultiviewX
 from datasets.sampler import RandomPairSampler
-from datasets.wildtrack_dataset import Wildtrack
-from datasets.pedestrian_dataset import PedestrianDataset
+from datasets.messytable_dataset import Messytable
+from datasets.object_dataset import ObjectDataset
 
 
-class PedestrianDataModule(pl.LightningDataModule):
+class ObjectDataModule(pl.LightningDataModule):
     def __init__(
             self,
             data_dir: str = "../data/MultiviewX",
@@ -17,6 +16,7 @@ class PedestrianDataModule(pl.LightningDataModule):
             resolution=None,
             bounds=None,
             load_depth=False,
+            train_ratio=.5026,
     ):
         super().__init__()
         self.data_dir = data_dir
@@ -26,6 +26,7 @@ class PedestrianDataModule(pl.LightningDataModule):
         self.bounds = bounds
         self.load_depth = load_depth
         self.dataset = os.path.basename(self.data_dir)
+        self.train_ratio = train_ratio
 
         self.data_predict = None
         self.data_test = None
@@ -33,40 +34,42 @@ class PedestrianDataModule(pl.LightningDataModule):
         self.data_train = None
 
     def setup(self, stage: Optional[str] = None):
-        if 'wildtrack' in self.dataset.lower():
-            base = Wildtrack(self.data_dir)
-        elif 'multiviewx' in self.dataset.lower():
-            base = MultiviewX(self.data_dir)
+        if 'messytable' in self.dataset.lower():
+            base = Messytable(self.data_dir)
         else:
             raise ValueError(f'Unknown dataset name {self.dataset}')
 
         if stage == 'fit':
-            self.data_train = PedestrianDataset(
+            self.data_train = ObjectDataset(
                 base,
                 is_train=True,
                 resolution=self.resolution,
                 bounds=self.bounds,
+                train_ratio=self.train_ratio,
             )
         if stage == 'fit' or stage == 'validate':
-            self.data_val = PedestrianDataset(
+            self.data_val = ObjectDataset(
                 base,
                 is_train=False,
                 resolution=self.resolution,
                 bounds=self.bounds,
+                train_ratio=self.train_ratio,
             )
         if stage == 'test':
-            self.data_test = PedestrianDataset(
-                base,
-                is_train=False,
-                resolution=self.resolution,
-                bounds=self.bounds
-            )
-        if stage == 'predict':
-            self.data_predict = PedestrianDataset(
+            self.data_test = ObjectDataset(
                 base,
                 is_train=False,
                 resolution=self.resolution,
                 bounds=self.bounds,
+                train_ratio=self.train_ratio,
+            )
+        if stage == 'predict':
+            self.data_predict = ObjectDataset(
+                base,
+                is_train=False,
+                resolution=self.resolution,
+                bounds=self.bounds,
+                train_ratio=self.train_ratio,
             )
 
     def train_dataloader(self):

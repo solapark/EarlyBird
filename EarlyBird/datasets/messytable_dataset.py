@@ -4,26 +4,24 @@ import cv2
 import xml.etree.ElementTree as ET
 import re
 from torchvision.datasets import VisionDataset
+import json
 
-intrinsic_camera_matrix_filenames = ['intr_CVLab1.xml', 'intr_CVLab2.xml', 'intr_CVLab3.xml', 'intr_CVLab4.xml',
-                                     'intr_IDIAP1.xml', 'intr_IDIAP2.xml', 'intr_IDIAP3.xml']
-extrinsic_camera_matrix_filenames = ['extr_CVLab1.xml', 'extr_CVLab2.xml', 'extr_CVLab3.xml', 'extr_CVLab4.xml',
-                                     'extr_IDIAP1.xml', 'extr_IDIAP2.xml', 'extr_IDIAP3.xml']
+intrinsic_camera_matrix_filenames = ['CAM1_intrinsics.xml', 'CAM2_intrinsics.xml', 'CAM3_intrinsics.xml']
 
-
-class Wildtrack(VisionDataset):
+class Messytable(VisionDataset):
     def __init__(self, root):
         super().__init__(root)
         # image of shape C,H,W (C,N_row,N_col); xy indexging; x,y (w,h) (n_col,n_row)
         # WILDTRACK has ij-indexing: H*W=480*1440, thus x (i) is \in [0,480), y (j) is \in [0,1440)
         # WILDTRACK has in-consistent unit: centi-meter (cm) for calibration & pos annotation
-        self.__name__ = 'Wildtrack'
-        self.img_shape, self.worldgrid_shape = [1080, 1920], [480, 1440]  # H,W; N_row,N_col
-        self.num_cam, self.num_frame = 7, 2000
+        self.__name__ = 'Messytable'
+        self.img_shape, self.worldgrid_shape = [1080, 1920], [1300, 1800]  # H,W; N_row,N_col
+        self.num_cam, self.num_frame = 3, 1880+1861
         # world x,y actually means i,j in Wildtrack, which correspond to h,w
-        self.worldcoord_from_worldgrid_mat = np.array([[0, 2.5, -300], [2.5, 0, -900], [0, 0, 1]])
-        self.intrinsic_matrices, self.extrinsic_matrices = zip(
-            *[self.get_intrinsic_extrinsic_matrix(cam) for cam in range(self.num_cam)])
+        #self.worldcoord_from_worldgrid_mat = np.array([[0, .1, -90], [.1, 0, -50], [0, 0, 1]])
+        self.worldcoord_from_worldgrid_mat = np.array([[.1, 0, -90], [0, .1, -50], [0, 0, 1]])
+        self.intrinsic_matrices = [self.get_intrinsic_matrix(cam) for cam in range(self.num_cam)]
+        self.extrinsic_matrices = self.get_extrinsic_matrix()
 
     def get_image_fpaths(self, frame_range):
         img_fpaths = {cam: {} for cam in range(self.num_cam)}
@@ -38,11 +36,11 @@ class Wildtrack(VisionDataset):
         return img_fpaths
 
     def get_worldgrid_from_pos(self, pos):
-        grid_y = pos % 480
-        grid_x = pos // 480
+        grid_x = pos % 1800
+        grid_y = pos // 1800
         return np.array([grid_x, grid_y], dtype=int)
 
-    def get_intrinsic_extrinsic_matrix(self, camera_i):
+    def get_intrinsic_matrix(self, camera_i):
         intrinsic_camera_path = os.path.join(self.root, 'calibrations', 'intrinsic_zero')
         intrinsic_params_file = cv2.FileStorage(os.path.join(intrinsic_camera_path,
                                                              intrinsic_camera_matrix_filenames[camera_i]),
@@ -50,17 +48,19 @@ class Wildtrack(VisionDataset):
         intrinsic_matrix = intrinsic_params_file.getNode('camera_matrix').mat()
         intrinsic_params_file.release()
 
-        extrinsic_params_file_root = ET.parse(os.path.join(self.root, 'calibrations', 'extrinsic',
-                                                           extrinsic_camera_matrix_filenames[camera_i])).getroot()
+        return intrinsic_matrix
 
-        rvec = extrinsic_params_file_root.findall('rvec')[0].text.lstrip().rstrip().split(' ')
-        rvec = np.array(list(map(lambda x: float(x), rvec)), dtype=np.float32)
+    def get_extrinsic_matrix(self):
+        with open(os.path.join(self.root, 'calibrations', 'extrinsic.json')) as json_file:
+            data = json.load(json_file)
 
-        tvec = extrinsic_params_file_root.findall('tvec')[0].text.lstrip().rstrip().split(' ')
-        tvec = np.array(list(map(lambda x: float(x), tvec)), dtype=np.float32)
+        matrix_list = []
+        for key in data:
+            inner_matrices = []
+            for sub_key in data[key]:
+                inner_matrices.append(data[key][sub_key])
+            matrix_list.append(inner_matrices)
 
-        rotation_matrix, _ = cv2.Rodrigues(rvec)
-        translation_matrix = np.array(tvec, dtype=np.float32).reshape(3, 1)
-        extrinsic_matrix = np.hstack((rotation_matrix, translation_matrix))
+        return np.array(matrix_list)
 
-        return intrinsic_matrix, extrinsic_matrix
+

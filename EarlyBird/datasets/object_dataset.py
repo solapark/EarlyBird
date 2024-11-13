@@ -15,7 +15,7 @@ from datasets.wildtrack_dataset import Wildtrack
 from utils import geom, basic, vox
 
 
-class PedestrianDataset(VisionDataset):
+class ObjectDataset(VisionDataset):
     def __init__(
             self,
             base,
@@ -24,6 +24,7 @@ class PedestrianDataset(VisionDataset):
             bounds=(-500, 500, -320, 320, 0, 2),
             final_dim: tuple = (720, 1280),
             resize_lim: list = (0.8, 1.2),
+            train_ratio= .5026,
     ):
         super().__init__(base.root)
         self.base = base
@@ -37,8 +38,10 @@ class PedestrianDataset(VisionDataset):
         self.resolution = resolution
         self.data_aug_conf = {'final_dim': final_dim, 'resize_lim': resize_lim}
         self.kernel_size = 1.5
-        self.max_objects = 60
+        self.max_objects = 73
         self.img_downsample = 4
+        self.img_reduce = (self.img_shape[0]/self.data_aug_conf['final_dim'][0]*self.img_downsample, 
+                            self.img_shape[1]/self.data_aug_conf['final_dim'][1]*self.img_downsample) #(6,6)
 
         self.Y, self.Z, self.X = self.resolution
         self.scene_centroid = torch.tensor((0., 0., 0.)).reshape([1, 3])
@@ -50,9 +53,9 @@ class PedestrianDataset(VisionDataset):
             assert_cube=False)
 
         if self.is_train:
-            frame_range = range(0, int(self.num_frame * 0.9))
+            frame_range = range(0, int(self.num_frame * train_ratio))
         else:
-            frame_range = range(int(self.num_frame * 0.9), self.num_frame)
+            frame_range = range(int(self.num_frame * train_ratio), self.num_frame)
 
         self.img_fpaths = self.base.get_image_fpaths(frame_range)
         self.world_gt = {}
@@ -70,9 +73,7 @@ class PedestrianDataset(VisionDataset):
         intrinsic = torch.tensor(np.stack(self.base.intrinsic_matrices, axis=0), dtype=torch.float32)  # S,3,3
         intrinsic = geom.merge_intrinsics(*geom.split_intrinsics(intrinsic)).squeeze()  # S,4,4
         self.calibration['intrinsic'] = intrinsic
-        self.calibration['extrinsic'] = torch.eye(4)[None].repeat(intrinsic.shape[0], 1, 1)
-        self.calibration['extrinsic'][:, :3] = torch.tensor(
-            np.stack(self.base.extrinsic_matrices, axis=0), dtype=torch.float32)
+        self.calibration['extrinsic'] = self.base.extrinsic_matrices #(N, S, 4, 3) 
 
     def prepare_gt(self):
         og_gt = []
@@ -148,8 +149,8 @@ class PedestrianDataset(VisionDataset):
         return center, valid_mask, person_ids, offset
 
     def get_img_gt(self, img_pts, img_pids, sx, sy, crop):
-        H = int(self.data_aug_conf['final_dim'][0] / self.img_downsample)
-        W = int(self.data_aug_conf['final_dim'][1] / self.img_downsample)
+        H = int(self.data_aug_conf['final_dim'][0] / self.img_downsample) #180 = 720/4 
+        W = int(self.data_aug_conf['final_dim'][1] / self.img_downsample) #320 = 1280/4
         center = torch.zeros((2, H, W), dtype=torch.float32)
         offset = torch.zeros((2, H, W), dtype=torch.float32)
         size = torch.zeros((2, H, W), dtype=torch.float32)
@@ -216,15 +217,17 @@ class PedestrianDataset(VisionDataset):
         imgs, intrins, extrins = [], [], []
         centers, offsets, sizes, skeletons, pids, valids = [], [], [], [], [], []
         frame = list(self.world_gt.keys())[index]
+        extrinsic = torch.eye(4)[None].repeat(self.num_cam, 1, 1)
+        extrinsic[:, :3] = torch.tensor(self.calibration['extrinsic'][frame], dtype=torch.float32)
         for cam in cameras:
             img = Image.open(self.img_fpaths[cam][frame]).convert('RGB')
-            W, H = img.size
+            W, H = img.size #1920, 1080
 
-            resize_dims, crop = self.sample_augmentation()
-            sx = resize_dims[0] / float(W)
-            sy = resize_dims[1] / float(H)
+            resize_dims, crop = self.sample_augmentation() #(1280,720), (0,0,1280,720)
+            sx = resize_dims[0] / float(W) #.66666
+            sy = resize_dims[1] / float(H) #.66666
 
-            extrin = self.calibration['extrinsic'][cam]
+            extrin = extrinsic[cam]
             intrin = self.calibration['intrinsic'][cam]
             intrin = geom.scale_intrinsics(intrin.unsqueeze(0), sx, sy).squeeze(0)
 
@@ -314,6 +317,7 @@ class PedestrianDataset(VisionDataset):
             'frame': frame,
             'grid_gt': grid_gt,
             'img_gt': (gt_boxes, gt_ids),
+            'img_reduce': self.img_reduce,
         }
 
         target = {

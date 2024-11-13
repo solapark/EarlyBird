@@ -1,5 +1,7 @@
 import torch
 import torch.nn as nn
+import matplotlib.pyplot as plt
+import numpy as np
 
 import utils.geom
 import utils.vox
@@ -26,6 +28,7 @@ class MVDet(nn.Module):
         self.latent_dim = latent_dim
         self.encoder_type = encoder_type
         self.num_cameras = num_cameras
+        self.img_coord_map = None
 
         self.mean = torch.as_tensor([0.485, 0.456, 0.406], device=device).reshape(1, 3, 1, 1)
         self.std = torch.as_tensor([0.229, 0.224, 0.225], device=device).reshape(1, 3, 1, 1)
@@ -78,7 +81,7 @@ class MVDet(nn.Module):
         self.size_weight = nn.Parameter(torch.tensor(0.0), requires_grad=True)
         self.rot_weight = nn.Parameter(torch.tensor(0.0), requires_grad=True)
 
-    def forward(self, rgb_cams, pix_T_cams, cams_T_global, vox_util, ref_T_global):
+    def forward(self, rgb_cams, pix_T_cams, cams_T_global, vox_util, ref_T_global, visualize=0):
         """
         B = batch size, S = number of cameras, C = 3, H = img height, W = img width
         rgb_cams: (B,S,C,H,W)
@@ -113,10 +116,16 @@ class MVDet(nn.Module):
         ref_T_mem = ref_T_mem[0, [0, 1, 3]][:, [0, 1, 3]]  # 3,3
         featpix_T_mem_ = torch.matmul(featpix_T_ref_, ref_T_mem)  # B*S,3,3
         mem_T_featpix = torch.inverse(featpix_T_mem_)  # B*S,3,3
-        proj_mats = mem_T_featpix  # B*S,3,3
+        self.proj_mats = mem_T_featpix  # B*S,3,3
 
         # B*S,latent_dim,Y,X
-        world_features_ = warp_perspective(feat_cams_, proj_mats, (self.Y, self.X), align_corners=False)
+        world_features_ = warp_perspective(feat_cams_, self.proj_mats, (self.Y, self.X), align_corners=False)
+        if visualize:
+            for cam in range(S):
+                plt.imshow(torch.norm(feat_cams_[cam].detach(), dim=0).cpu().numpy())
+                plt.savefig('img_C%d.png'%(cam))
+                plt.imshow(torch.norm(world_features_[cam].detach(), dim=0).cpu().numpy())
+                plt.savefig('feat_C%d.png'%(cam))
 
         world_features = __u(world_features_)  # B,S,latent_dim,Y,X
         if self.num_cameras is None:
@@ -132,5 +141,29 @@ class MVDet(nn.Module):
 
         out_dict = self.decoder(world_features, feat_cams_,
                                 (self.bev_flip1_index, self.bev_flip2_index) if self.rand_flip else None)
+        if self.img_coord_map is None :
+            self.reduced_img_size = out_dict['img_center'].shape[2:] #(H, W)
+            self.img_downsample = H/self.reduced_img_size[0], W/self.reduced_img_size[1]
+            self.create_img_coord_map()
 
         return out_dict
+
+    def create_img_coord_map(self):
+        H, W = self.reduced_img_size
+        grid_x, grid_y = np.meshgrid(np.arange(W), np.arange(H))
+        grid_x = torch.from_numpy(grid_x)
+        grid_y = torch.from_numpy(grid_y)
+        ret = torch.stack([grid_x, grid_y], dim=0).unsqueeze(0).float()
+        self.img_coord_map = ret.repeat(self.num_cameras, 1, 1, 1)
+
+    def warp_xy(self):
+        img = self.img_coord_map
+        proj_mat = self.proj_mats.float().to('cuda:0')
+        img_warp = warp_perspective(img.to('cuda:0'), proj_mat, (self.Y, self.X), align_corners=False, mode='bilinear')
+        return img_warp
+
+    def warp_wh(self, img):
+        proj_mat = self.proj_mats.float().to('cuda:0')
+        img_warp = warp_perspective(img.to('cuda:0'), proj_mat, (self.Y, self.X), align_corners=False, mode='nearest')
+        return img_warp
+ 

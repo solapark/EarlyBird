@@ -35,13 +35,14 @@ def get_alpha(rot):
     return alpha1 * idx + alpha2 * (1 - idx)
 
 
-def decoder(center_e, offset_e, size_e, id_e, rz_e=None, K=60):
+def decoder(center_e, offset_e, size_e, id_e, xywh_img_e, rz_e=None, K=60):
     """
     center_e: B,1,H,W
     offset_e: B,2,H,W
     size_e: B,3,H,W
     rz_e: B,8,H,W
     id_e: B,C,H,W
+    xywh_img_e: B,4,H,W
     """
     batch, cat, height, width = center_e.size()
     center_e = _nms(center_e)
@@ -52,6 +53,7 @@ def decoder(center_e, offset_e, size_e, id_e, rz_e=None, K=60):
     offset = _transpose_and_gather_feat(offset_e, inds)  # B,K,2
     size = _transpose_and_gather_feat(size_e, inds)  # B,K,3
     id = _transpose_and_gather_feat(id_e, inds)  # B,K,C
+    xywh_img = _transpose_and_gather_feat(xywh_img_e, inds)  # B,K,4
     if rz_e is not None:
         rz = _transpose_and_gather_feat(rz_e, inds)
     else:
@@ -61,7 +63,7 @@ def decoder(center_e, offset_e, size_e, id_e, rz_e=None, K=60):
     ys = ys.view(batch, K, 1) + offset[:, :, 1:2]
     xy = torch.cat((xs, ys), dim=2)  # batch,K,2
 
-    return xy.detach(), scores.detach(), id.detach(), size.detach(), rz.detach()
+    return xy.detach(), scores.detach(), id.detach(), size.detach(), xywh_img.detach(), rz.detach()
 
 
 def _topk(scores, K=40):

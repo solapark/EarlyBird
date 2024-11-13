@@ -188,6 +188,10 @@ class WorldTrackModel(pl.LightningModule):
         item, target = batch
         output = self(item)
 
+        if 0 :
+            plt.imshow(torch.norm(target['valid_bev'][0].detach().float(), dim=0).cpu().numpy())
+            plt.savefig('valid_bev.png')
+
         total_loss, loss_dict, stats_dict = self.loss(target, output)
 
         B = item['img'].shape[0]
@@ -228,20 +232,28 @@ class WorldTrackModel(pl.LightningModule):
         size_e = output['instance_size']
         rot_e = output['instance_rot']
         id_e = output['instance_id_feat']
+        size_img_e = output['img_size']
+        
+        xy_img_e = self.model.warp_xy()
+        wh_img_e = self.model.warp_wh(size_img_e)
+        xywh_img_e = torch.cat([xy_img_e, wh_img_e], 1).reshape(1, -1, self.Y, self.X)  #(3, 4, H, W) -> (1, 3*4, H, W)
 
-        xy_e, scores_e, ids_e, sizes_e, _ = decode.decoder(
-            basic._sigmoid(center_e), offset_e, size_e, id_e, rz_e=rot_e, K=self.max_detections
+        xy_e, scores_e, ids_e, sizes_e, xywhs_img_e, _ = decode.decoder(
+            basic._sigmoid(center_e), offset_e, size_e, id_e, xywh_img_e, rz_e=rot_e, K=self.max_detections
         )
+        xywhs_img_e[..., 0::2] *= item['img_reduce'][1]
+        xywhs_img_e[..., 1::2] *= item['img_reduce'][0]
 
         # moda & modp
         mem_xyz = torch.cat((xy_e, torch.zeros_like(scores_e)), dim=2)  # B,K,3 [x_mem, y_mem, 0]
         ref_xyz = self.vox_util.Mem2Ref(mem_xyz, self.Y, self.Z, self.X)
-        for frame, grid_gt, xyz, score in zip(item['frame'], item['grid_gt'], ref_xyz, scores_e.squeeze(2)):
+        for frame, grid_gt, xyzs, score, img_xywhs in zip(item['frame'], item['grid_gt'], ref_xyz, scores_e.squeeze(2), xywhs_img_e):
             frame = int(frame.item())
             valid = score > self.conf_threshold
 
             self.moda_gt_list.extend([[frame, x.item(), y.item()] for x, y, _ in grid_gt[grid_gt.sum(1) != 0]])
-            self.moda_pred_list.extend([[frame, x.cpu(), y.cpu()] for x, y, _ in xyz[valid]])
+            #self.moda_pred_list.extend([[frame, x.cpu(), y.cpu()] for x, y, _ in xyzs[valid]])
+            self.moda_pred_list.extend([torch.cat([torch.tensor([frame]), xyz[:2].cpu(), img_xywh.cpu()], -1) for xyz, img_xywh in zip(xyzs[valid], img_xywhs[valid])])
 
         '''
         # mota
@@ -284,7 +296,8 @@ class WorldTrackModel(pl.LightningModule):
         # moda & modp
         pred_path = osp.join(log_dir, 'moda_pred.txt')
         gt_path = osp.join(log_dir, 'moda_gt.txt')
-        np.savetxt(pred_path, np.array(self.moda_pred_list), '%f')
+        self.moda_pred_list = torch.stack(self.moda_pred_list).int()
+        np.savetxt(pred_path, np.array(self.moda_pred_list), '%d')
         np.savetxt(gt_path, np.array(self.moda_gt_list), '%d')
         recall, precision, moda, modp = modMetricsCalculator(osp.abspath(pred_path), osp.abspath(gt_path))
         self.log(f'detect/recall', recall)

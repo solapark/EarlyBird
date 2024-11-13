@@ -29,6 +29,8 @@ class UpsamplingConcat(nn.Module):
 
     def forward(self, x_to_upsample, x):
         x_to_upsample = self.upsample(x_to_upsample)
+        padding = (0, x_to_upsample.shape[3]-x.shape[3], 0, x_to_upsample.shape[2]-x.shape[2])
+        x = torch.nn.functional.pad(x, padding, mode='replicate')  
         x_to_upsample = torch.cat([x, x_to_upsample], dim=1)
         return self.conv(x_to_upsample)
 
