@@ -25,10 +25,12 @@ class ObjectDataset(VisionDataset):
             final_dim: tuple = (720, 1280),
             resize_lim: list = (0.8, 1.2),
             train_ratio= .5026,
+            wh_train="center",
     ):
         super().__init__(base.root)
         self.base = base
         self.root, self.num_cam, self.num_frame = base.root, base.num_cam, base.num_frame
+        self.wh_train = wh_train
         # img_shape and worldgrid_shape is the original shape matching the annotations in dataset
         # MultiviewX: [1080, 1920], [640, 1000] Wildtrack: [1080, 1920], [480, 1440]
         self.img_shape = base.img_shape
@@ -157,6 +159,7 @@ class ObjectDataset(VisionDataset):
         skeleton = torch.zeros((2, H, W), dtype=torch.float32)
 
         valid_mask = torch.zeros((1, H, W), dtype=torch.bool)
+        valid_wh_mask = torch.zeros((1, H, W), dtype=torch.bool)
         person_ids = torch.zeros((1, H, W), dtype=torch.long)
 
         xmin = (img_pts[:, 0] * sx - crop[0]) / self.img_downsample
@@ -184,10 +187,16 @@ class ObjectDataset(VisionDataset):
                 continue
             valid_mask[:, ct_int[1], ct_int[0]] = 1
             offset[:, ct_int[1], ct_int[0]] = center_pts[pt_idx] - ct_int
-            size[:, ct_int[1], ct_int[0]] = wh
+            if self.wh_train == "center" :
+                valid_wh_mask[:, ct_int[1], ct_int[0]] = 1
+                size[:, ct_int[1], ct_int[0]] = wh
+            else : 
+                ft_int = foot_pts[pt_idx].int()
+                valid_wh_mask[:, ft_int[1], ft_int[0]] = 1
+                size[:, ft_int[1], ft_int[0]] = wh
             person_ids[:, ct_int[1], ct_int[0]] = pid
 
-        return center, offset, size, skeleton, person_ids, valid_mask
+        return center, offset, size, skeleton, person_ids, valid_mask, valid_wh_mask
 
     def sample_augmentation(self):
         fH, fW = self.data_aug_conf['final_dim']
@@ -215,7 +224,7 @@ class ObjectDataset(VisionDataset):
 
     def get_image_data(self, index, cameras):
         imgs, intrins, extrins = [], [], []
-        centers, offsets, sizes, skeletons, pids, valids = [], [], [], [], [], []
+        centers, offsets, sizes, skeletons, pids, valids, valids_wh = [], [], [], [], [], [], []
         frame = list(self.world_gt.keys())[index]
         extrinsic = torch.eye(4)[None].repeat(self.num_cam, 1, 1)
         extrinsic[:, :3] = torch.tensor(self.calibration['extrinsic'][frame], dtype=torch.float32)
@@ -245,7 +254,7 @@ class ObjectDataset(VisionDataset):
             extrins.append(extrin)
 
             img_pts, img_pids = self.imgs_gt[frame][cam]
-            center_img, offset_img, size_img, skeleton_img, pid_img, valid_img = self.get_img_gt(img_pts, img_pids,
+            center_img, offset_img, size_img, skeleton_img, pid_img, valid_img, valid_wh_img = self.get_img_gt(img_pts, img_pids,
                                                                                                  sx, sy, crop)
 
             centers.append(center_img)
@@ -254,9 +263,10 @@ class ObjectDataset(VisionDataset):
             skeletons.append(skeleton_img)
             pids.append(pid_img)
             valids.append(valid_img)
+            valids_wh.append(valid_wh_img)
 
         return torch.stack(imgs), torch.stack(intrins), torch.stack(extrins), torch.stack(centers), torch.stack(
-            offsets), torch.stack(sizes), torch.stack(skeletons), torch.stack(pids), torch.stack(valids)
+            offsets), torch.stack(sizes), torch.stack(skeletons), torch.stack(pids), torch.stack(valids), torch.stack(valids_wh)
 
     def __len__(self):
         return len(self.world_gt.keys())
@@ -266,7 +276,7 @@ class ObjectDataset(VisionDataset):
         cameras = list(range(self.num_cam))  # TODO: cam dropout?
 
         # images
-        imgs, intrins, extrins, centers_img, offsets_img, sizes_img, skeletons_img, pids_img, valids_img = \
+        imgs, intrins, extrins, centers_img, offsets_img, sizes_img, skeletons_img, pids_img, valids_img, valids_wh_img, = \
             self.get_image_data(index, cameras)
 
         worldcoord_from_worldgrid = torch.eye(4)
@@ -335,6 +345,7 @@ class ObjectDataset(VisionDataset):
             'offset_img': offsets_img,  # S,2,H/8,W/8
             'size_img': sizes_img,  # S,2,H/8,W/8
             'valid_img': valids_img,  # S,1,H/8,W/8
+            'valid_wh_img': valids_wh_img,  # S,1,H/8,W/8
             'pid_img': pids_img  # S,1,H/8,W/8
         }
 

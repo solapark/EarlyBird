@@ -17,6 +17,7 @@ class ObjectDataModule(pl.LightningDataModule):
             bounds=None,
             load_depth=False,
             train_ratio=.5026,
+            wh_train="center",
     ):
         super().__init__()
         self.data_dir = data_dir
@@ -27,6 +28,7 @@ class ObjectDataModule(pl.LightningDataModule):
         self.load_depth = load_depth
         self.dataset = os.path.basename(self.data_dir)
         self.train_ratio = train_ratio
+        self.wh_train = wh_train
 
         self.data_predict = None
         self.data_test = None
@@ -46,6 +48,7 @@ class ObjectDataModule(pl.LightningDataModule):
                 resolution=self.resolution,
                 bounds=self.bounds,
                 train_ratio=self.train_ratio,
+                wh_train = self.wh_train,
             )
         if stage == 'fit' or stage == 'validate':
             self.data_val = ObjectDataset(
@@ -54,6 +57,7 @@ class ObjectDataModule(pl.LightningDataModule):
                 resolution=self.resolution,
                 bounds=self.bounds,
                 train_ratio=self.train_ratio,
+                wh_train = self.wh_train,
             )
         if stage == 'test':
             self.data_test = ObjectDataset(
@@ -62,6 +66,7 @@ class ObjectDataModule(pl.LightningDataModule):
                 resolution=self.resolution,
                 bounds=self.bounds,
                 train_ratio=self.train_ratio,
+                wh_train = self.wh_train,
             )
         if stage == 'predict':
             self.data_predict = ObjectDataset(
@@ -70,6 +75,7 @@ class ObjectDataModule(pl.LightningDataModule):
                 resolution=self.resolution,
                 bounds=self.bounds,
                 train_ratio=self.train_ratio,
+                wh_train = self.wh_train,
             )
 
     def train_dataloader(self):

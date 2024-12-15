@@ -109,6 +109,7 @@ class WorldTrackModel(pl.LightningModule):
         offset_img_g = basic.pack_seqdim(target['offset_img'], B)
         size_img_g = basic.pack_seqdim(target['size_img'], B)
         valid_img_g = basic.pack_seqdim(target['valid_img'], B)
+        valid_wh_img_g = basic.pack_seqdim(target['valid_wh_img'], B)
         id_img_g = basic.pack_seqdim(target['pid_img'], B)  # B*S,1,H/8,W/8
 
         center_loss = self.center_loss_fn(basic._sigmoid(center_e), center_g)
@@ -144,7 +145,7 @@ class WorldTrackModel(pl.LightningModule):
         offset_img_loss = basic.reduce_masked_mean(
             torch.abs(offset_img_e - offset_img_g).sum(dim=1, keepdim=True), valid_img_g) / S
         size_img_loss = basic.reduce_masked_mean(
-            torch.abs(size_img_e - size_img_g).sum(dim=1, keepdim=True), valid_img_g) / (10 * S)
+            torch.abs(size_img_e - size_img_g).sum(dim=1, keepdim=True), valid_wh_img_g) / (10 * S)
 
         # re_id loss
         valid_g = valid_g.flatten(1)
