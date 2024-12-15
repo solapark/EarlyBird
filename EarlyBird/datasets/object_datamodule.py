@@ -4,6 +4,7 @@ from torch.utils.data import DataLoader
 from typing import Optional
 from datasets.sampler import RandomPairSampler
 from datasets.messytable_dataset import Messytable
+from datasets.synthretail_dataset import Synthretail
 from datasets.object_dataset import ObjectDataset
 
 
@@ -38,6 +39,8 @@ class ObjectDataModule(pl.LightningDataModule):
     def setup(self, stage: Optional[str] = None):
         if 'messytable' in self.dataset.lower():
             base = Messytable(self.data_dir)
+        if 'synthretail' in self.dataset.lower():
+            base = Synthretail(self.data_dir)
         else:
             raise ValueError(f'Unknown dataset name {self.dataset}')
 

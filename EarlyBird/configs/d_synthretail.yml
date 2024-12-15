@@ -1,0 +1,13 @@
+data:
+  class_path: datasets.ObjectDataModule
+  init_args:
+    data_dir: "/home/sapark/ped/dataset/Synthretail_dataset"
+    train_ratio: .5026
+    #num_workers: 0
+model:
+  resolution: [250, 2, 375]  # Y,Z,X
+  bounds: [0, 1500, 0, 1000, 0, 200]  # xmin,xmax,ymin,ymax,zmin,zmax
+  #depth: [100, 0, 2000]
+  num_cameras: 3
+  num_ids: 64
+  max_detections: 73
